@@ -85,7 +85,7 @@ async function connectWhatsApp(phoneNumber = null) {
     },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.macOS('Desktop'),
+    browser: Browsers.macOS('Google Chrome'),
     generateHighQualityLinkPreview: false,
     syncFullHistory: false,
     markOnlineOnConnect: false,
