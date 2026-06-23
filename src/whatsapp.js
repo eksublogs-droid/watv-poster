@@ -13,7 +13,6 @@ const fs = require('fs');
 const AUTH_FOLDER = path.join(__dirname, '../auth_info');
 let sock = null;
 let connectionStatus = 'disconnected';
-let currentPairingCode = null;
 let io = null;
 
 function setIO(socketIO) {
@@ -38,7 +37,6 @@ async function connectWhatsApp(phoneNumber = null) {
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
   const { version } = await fetchLatestBaileysVersion();
-
   const logger = pino({ level: 'silent' });
 
   sock = makeWASocket({
@@ -49,22 +47,34 @@ async function connectWhatsApp(phoneNumber = null) {
     },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.baileys('Desktop'),
+    browser: Browsers.macOS('Desktop'),
     generateHighQualityLinkPreview: false,
-    syncFullHistory: false
+    syncFullHistory: false,
+    markOnlineOnConnect: false,
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: undefined
   });
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
-      emitStatus('qr', { qr });
+  // Request pairing code immediately after socket creation (official Baileys pattern)
+  if (phoneNumber && !state.creds.registered) {
+    const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+    emitStatus('connecting');
+    try {
+      const code = await sock.requestPairingCode(cleanNumber);
+      console.log('📱 Pairing code generated:', code);
+      emitStatus('pairing_code', { code });
+    } catch (err) {
+      console.error('Pairing code error:', err.message);
+      emitStatus('error', { message: 'Failed to generate pairing code. Try again.' });
     }
+  }
+
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect } = update;
 
     if (connection === 'open') {
-      currentPairingCode = null;
       emitStatus('connected');
       console.log('✅ WhatsApp connected successfully');
     }
@@ -90,23 +100,6 @@ async function connectWhatsApp(phoneNumber = null) {
     }
   });
 
-  if (phoneNumber && !state.creds.registered) {
-    emitStatus('connecting');
-    await new Promise(r => setTimeout(r, 3000));
-    try {
-      const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
-      const code = await sock.requestPairingCode(cleanNumber);
-      currentPairingCode = code;
-      console.log('📱 Pairing code generated:', code);
-      emitStatus('pairing_code', { code });
-      return code;
-    } catch (err) {
-      console.error('Pairing code error:', err.message);
-      emitStatus('error', { message: 'Failed to generate pairing code. Try again.' });
-      return null;
-    }
-  }
-
   return null;
 }
 
@@ -125,23 +118,14 @@ async function postStatus(mediaPath, caption, mediaType) {
 
   try {
     if (mediaType === 'text') {
-      await sock.sendMessage('status@broadcast', {
-        text: caption
-      });
+      await sock.sendMessage('status@broadcast', { text: caption });
     } else if (mediaType === 'image') {
-      const imageBuffer = require('fs').readFileSync(mediaPath);
-      await sock.sendMessage('status@broadcast', {
-        image: imageBuffer,
-        caption: caption
-      });
+      const imageBuffer = fs.readFileSync(mediaPath);
+      await sock.sendMessage('status@broadcast', { image: imageBuffer, caption });
     } else if (mediaType === 'video') {
-      const videoBuffer = require('fs').readFileSync(mediaPath);
-      await sock.sendMessage('status@broadcast', {
-        video: videoBuffer,
-        caption: caption
-      });
+      const videoBuffer = fs.readFileSync(mediaPath);
+      await sock.sendMessage('status@broadcast', { video: videoBuffer, caption });
     }
-
     console.log('✅ Status posted successfully');
     return true;
   } catch (err) {
