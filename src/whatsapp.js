@@ -95,7 +95,13 @@ async function connectWhatsApp(phoneNumber = null) {
     syncFullHistory: false,
     markOnlineOnConnect: false,
     connectTimeoutMs: 60000,
-    defaultQueryTimeoutMs: undefined
+    defaultQueryTimeoutMs: undefined,
+    // Explicit keep-alive so the socket actively pings while waiting for
+    // the user to enter the pairing code. Without this, Railway's network
+    // layer or a long idle gap can let the connection go stale, causing
+    // WhatsApp to time out the pairing attempt server-side (408 "QR refs
+    // attempts ended") even when the code was entered quickly.
+    keepAliveIntervalMs: 10000
   });
 
   sock.ev.on('creds.update', saveCreds);
