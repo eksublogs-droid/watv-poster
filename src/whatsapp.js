@@ -61,24 +61,40 @@ function scheduleReconnect() {
 
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    connectWhatsApp(savedPhoneNumber);
+    connectWhatsApp(savedPhoneNumber, { isReconnect: true });
   }, delay);
 }
 
-async function connectWhatsApp(phoneNumber = null) {
+async function connectWhatsApp(phoneNumber = null, { isReconnect = false } = {}) {
   // Keep using the last known phone number if a reconnect doesn't pass one
   if (phoneNumber) {
+    const isNewNumber = phoneNumber !== savedPhoneNumber;
     savedPhoneNumber = phoneNumber;
+
+    // Fresh pairing attempt with a genuinely NEW number — wipe any old/partial
+    // auth state first. Without this, leftover creds from a previous failed
+    // or half-completed pairing can cause WhatsApp to reject the new code
+    // immediately ("Couldn't link device"). We do NOT do this on reconnects
+    // of an already-working session.
+    if (!isReconnect && isNewNumber && fs.existsSync(AUTH_FOLDER)) {
+      fs.rmSync(AUTH_FOLDER, { recursive: true, force: true });
+      console.log('🗑️ Cleared stale auth state before new pairing attempt');
+    }
+
+    // Basic sanity check on the number before we ever hit the API.
+    const digitsOnly = phoneNumber.replace(/[^0-9]/g, '');
+    if (digitsOnly.length < 8 || digitsOnly.length > 15) {
+      emitStatus('error', {
+        message: 'Phone number looks invalid. Include the country code, e.g. 15551234567 (no +, spaces, or symbols).'
+      });
+      savedPhoneNumber = null;
+      return null;
+    }
   }
 
   if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
-  // Fetch the current WhatsApp Web version live. A hardcoded version
-  // number becomes stale and gets rejected by WhatsApp's servers (405
-  // errors) once WhatsApp updates their web client — which happens
-  // periodically without notice. Always pulling the latest is the
-  // safer default here despite the version/library mismatch tradeoff.
   const { version } = await fetchLatestBaileysVersion();
   const logger = pino({ level: 'silent' });
 
@@ -95,13 +111,7 @@ async function connectWhatsApp(phoneNumber = null) {
     syncFullHistory: false,
     markOnlineOnConnect: false,
     connectTimeoutMs: 60000,
-    defaultQueryTimeoutMs: undefined,
-    // Explicit keep-alive so the socket actively pings while waiting for
-    // the user to enter the pairing code. Without this, Railway's network
-    // layer or a long idle gap can let the connection go stale, causing
-    // WhatsApp to time out the pairing attempt server-side (408 "QR refs
-    // attempts ended") even when the code was entered quickly.
-    keepAliveIntervalMs: 10000
+    defaultQueryTimeoutMs: undefined
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -111,16 +121,7 @@ async function connectWhatsApp(phoneNumber = null) {
   let pairingRequested = false;
 
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr, isNewLogin } = update;
-
-    // 🔍 DIAGNOSTIC: dump the full update object so we can see everything
-    // WhatsApp is actually telling us, not just the bits we normally read.
-    console.log('🔍 [DEBUG] connection.update:', JSON.stringify({
-      connection,
-      isNewLogin,
-      hasQr: !!qr,
-      registered: state.creds.registered
-    }));
+    const { connection, lastDisconnect } = update;
 
     if (connection === 'connecting') {
       emitStatus('connecting');
@@ -141,17 +142,8 @@ async function connectWhatsApp(phoneNumber = null) {
           console.log('📱 Pairing code generated:', code);
           emitStatus('pairing_code', { code });
         } catch (err) {
-          // 🔍 DIAGNOSTIC: log everything about this error, not just .message
-          console.error('❌ [DEBUG] Pairing code request failed. Full error:');
-          console.error('  message:', err?.message);
-          console.error('  statusCode:', err?.output?.statusCode);
-          console.error('  payload:', JSON.stringify(err?.output?.payload));
-          console.error('  data:', JSON.stringify(err?.data));
-          console.error('  stack:', err?.stack);
-          emitStatus('error', {
-            message: 'Failed to generate pairing code. Try again.',
-            debug: err?.message
-          });
+          console.error('Pairing code error:', err.message);
+          emitStatus('error', { message: 'Failed to generate pairing code. Try again.' });
         }
       }
     }
@@ -164,22 +156,8 @@ async function connectWhatsApp(phoneNumber = null) {
     }
 
     if (connection === 'close') {
-      const boomError = lastDisconnect?.error;
-      const reason = boomError?.output?.statusCode;
-
-      // 🔍 DIAGNOSTIC: this is the important part — print the FULL boom
-      // error, including payload and any WhatsApp-specific error content
-      // (e.g. stream:error tags, conflict types like device_removed,
-      // rate-overlimit, etc). This is the data the GitHub bug reports
-      // show — your dashboard logs were only showing the bare statusCode.
-      console.log('❌ [DEBUG] Connection closed. Full disconnect info:');
-      console.log('  statusCode:', reason);
-      console.log('  message:', boomError?.message);
-      console.log('  payload:', JSON.stringify(boomError?.output?.payload));
-      console.log('  data:', JSON.stringify(boomError?.data));
-      if (boomError?.data?.content) {
-        console.log('  content (raw WA stream error):', JSON.stringify(boomError.data.content));
-      }
+      const reason = lastDisconnect?.error?.output?.statusCode;
+      console.log('❌ Connection closed. Reason:', reason);
 
       if (reason === DisconnectReason.loggedOut) {
         clearAuth();
@@ -195,8 +173,7 @@ async function connectWhatsApp(phoneNumber = null) {
         console.log('🛑 Connection closed during pairing. Not auto-retrying — request a new code manually when ready.');
         clearAuth();
         emitStatus('error', {
-          message: 'Pairing failed. Wait a moment, then request a new code.',
-          debug: `statusCode=${reason}, msg=${boomError?.message}`
+          message: 'Pairing failed. Wait a moment, then request a new code.'
         });
         reconnectAttempts = 0;
         savedPhoneNumber = null;
