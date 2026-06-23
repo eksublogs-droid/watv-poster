@@ -8,7 +8,7 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "github:shizo-devs/baileys",
+    "@whiskeysockets/baileys": "6.7.18",
     "express": "^4.18.2",
     "mongoose": "^8.0.3",
     "multer": "^1.4.5-lts.1",
