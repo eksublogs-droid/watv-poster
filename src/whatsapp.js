@@ -143,7 +143,21 @@ async function connectWhatsApp(phoneNumber = null) {
         emitStatus('logged_out');
         reconnectAttempts = 0;
         // Don't auto-reconnect after an explicit logout — needs fresh pairing
+      } else if (!state.creds.registered) {
+        // We were still in the middle of pairing (never successfully linked).
+        // Do NOT auto-retry here — repeatedly hammering WhatsApp's pairing
+        // endpoint with new codes makes things worse and can trigger rate
+        // limiting on the phone number. Stop and let the user manually
+        // request a new code when ready.
+        console.log('🛑 Connection closed during pairing. Not auto-retrying — request a new code manually when ready.');
+        clearAuth();
+        emitStatus('error', {
+          message: 'Pairing failed. Wait a moment, then request a new code.'
+        });
+        reconnectAttempts = 0;
+        savedPhoneNumber = null;
       } else {
+        // We had a previously working session — safe to auto-reconnect.
         emitStatus('disconnected');
         scheduleReconnect();
       }
