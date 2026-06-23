@@ -95,22 +95,37 @@ async function connectWhatsApp(phoneNumber = null) {
 
   sock.ev.on('creds.update', saveCreds);
 
-  // Request pairing code immediately after socket creation (official Baileys pattern)
-  if (savedPhoneNumber && !state.creds.registered) {
-    const cleanNumber = savedPhoneNumber.replace(/[^0-9]/g, '');
-    emitStatus('connecting');
-    try {
-      const code = await sock.requestPairingCode(cleanNumber);
-      console.log('📱 Pairing code generated:', code);
-      emitStatus('pairing_code', { code });
-    } catch (err) {
-      console.error('Pairing code error:', err.message);
-      emitStatus('error', { message: 'Failed to generate pairing code. Try again.' });
-    }
-  }
+  // Track whether we've already requested a pairing code for this socket,
+  // so we don't fire it more than once per connection attempt.
+  let pairingRequested = false;
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
+
+    if (connection === 'connecting') {
+      emitStatus('connecting');
+
+      // IMPORTANT: only request the pairing code once the socket has
+      // actually reached the 'connecting' state (WebSocket handshake
+      // underway). Requesting it immediately after makeWASocket() races
+      // the handshake and causes "Connection Closed" (428) errors.
+      if (savedPhoneNumber && !state.creds.registered && !pairingRequested) {
+        pairingRequested = true;
+        const cleanNumber = savedPhoneNumber.replace(/[^0-9]/g, '');
+
+        // Small delay to let the handshake settle before requesting the code
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        try {
+          const code = await sock.requestPairingCode(cleanNumber);
+          console.log('📱 Pairing code generated:', code);
+          emitStatus('pairing_code', { code });
+        } catch (err) {
+          console.error('Pairing code error:', err.message);
+          emitStatus('error', { message: 'Failed to generate pairing code. Try again.' });
+        }
+      }
+    }
 
     if (connection === 'open') {
       emitStatus('connected');
@@ -132,10 +147,6 @@ async function connectWhatsApp(phoneNumber = null) {
         emitStatus('disconnected');
         scheduleReconnect();
       }
-    }
-
-    if (connection === 'connecting') {
-      emitStatus('connecting');
     }
   });
 
