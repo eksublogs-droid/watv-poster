@@ -2,7 +2,7 @@
   "name": "watv-poster",
   "version": "1.0.0",
   "description": "WhatsApp TV Status Poster",
-  "main": "src/index.js",
+  "main": "node src/test-pairing.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js"
