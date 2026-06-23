@@ -15,6 +15,15 @@ let sock = null;
 let connectionStatus = 'disconnected';
 let io = null;
 
+// Remember the phone number across reconnects, so pairing can re-trigger
+let savedPhoneNumber = null;
+
+// Reconnect control — prevents infinite instant retry loops
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const BASE_RECONNECT_DELAY_MS = 5000; // 5s, doubles each attempt
+let reconnectTimer = null;
+
 function setIO(socketIO) {
   io = socketIO;
 }
@@ -32,7 +41,36 @@ function emitStatus(status, extra = {}) {
   if (io) io.emit('wa_status', { status, ...extra });
 }
 
+function scheduleReconnect() {
+  if (reconnectTimer) return; // already scheduled, don't stack timers
+
+  reconnectAttempts += 1;
+
+  if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+    console.log('🛑 Max reconnect attempts reached. Stopping auto-reconnect.');
+    emitStatus('error', {
+      message: 'Could not reconnect after several attempts. Please try connecting again manually.'
+    });
+    reconnectAttempts = 0;
+    return;
+  }
+
+  // Exponential backoff: 5s, 10s, 20s, 40s, 80s
+  const delay = BASE_RECONNECT_DELAY_MS * Math.pow(2, reconnectAttempts - 1);
+  console.log(`🔄 Reconnecting in ${delay / 1000}s (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectWhatsApp(savedPhoneNumber);
+  }, delay);
+}
+
 async function connectWhatsApp(phoneNumber = null) {
+  // Keep using the last known phone number if a reconnect doesn't pass one
+  if (phoneNumber) {
+    savedPhoneNumber = phoneNumber;
+  }
+
   if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
@@ -58,8 +96,8 @@ async function connectWhatsApp(phoneNumber = null) {
   sock.ev.on('creds.update', saveCreds);
 
   // Request pairing code immediately after socket creation (official Baileys pattern)
-  if (phoneNumber && !state.creds.registered) {
-    const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+  if (savedPhoneNumber && !state.creds.registered) {
+    const cleanNumber = savedPhoneNumber.replace(/[^0-9]/g, '');
     emitStatus('connecting');
     try {
       const code = await sock.requestPairingCode(cleanNumber);
@@ -77,6 +115,8 @@ async function connectWhatsApp(phoneNumber = null) {
     if (connection === 'open') {
       emitStatus('connected');
       console.log('✅ WhatsApp connected successfully');
+      // Successful connection — reset reconnect counter
+      reconnectAttempts = 0;
     }
 
     if (connection === 'close') {
@@ -86,12 +126,11 @@ async function connectWhatsApp(phoneNumber = null) {
       if (reason === DisconnectReason.loggedOut) {
         clearAuth();
         emitStatus('logged_out');
+        reconnectAttempts = 0;
+        // Don't auto-reconnect after an explicit logout — needs fresh pairing
       } else {
         emitStatus('disconnected');
-        setTimeout(() => {
-          console.log('🔄 Reconnecting...');
-          connectWhatsApp();
-        }, 5000);
+        scheduleReconnect();
       }
     }
 
@@ -135,6 +174,13 @@ async function postStatus(mediaPath, caption, mediaType) {
 }
 
 function disconnect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  reconnectAttempts = 0;
+  savedPhoneNumber = null;
+
   if (sock) {
     sock.logout();
     clearAuth();
