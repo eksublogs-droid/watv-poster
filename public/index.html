@@ -1,0 +1,1264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WA TV Poster</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #25D366;
+      --green-dark: #128C7E;
+      --green-light: #DCF8C6;
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3350;
+      --text: #e8eaf0;
+      --text-muted: #7b82a0;
+      --red: #ff4d4d;
+      --yellow: #f5a623;
+      --radius: 14px;
+      --radius-sm: 8px;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding-bottom: 40px;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo {
+      width: 36px;
+      height: 36px;
+      background: var(--green);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .app-name {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .app-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* ── STATUS BADGE ── */
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .status-badge:hover { opacity: 0.85; }
+
+    .status-badge.connected {
+      background: rgba(37,211,102,0.12);
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    .status-badge.disconnected, .status-badge.logged_out {
+      background: rgba(255,77,77,0.12);
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    .status-badge.connecting, .status-badge.pairing_code {
+      background: rgba(245,166,35,0.12);
+      border-color: var(--yellow);
+      color: var(--yellow);
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .dot.pulse {
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ── TABS ── */
+    .tabs {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .tabs::-webkit-scrollbar { display: none; }
+
+    .tab {
+      flex: 1;
+      min-width: 80px;
+      padding: 14px 10px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+
+    .tab.active {
+      color: var(--green);
+      border-bottom-color: var(--green);
+    }
+
+    .tab-icon { font-size: 16px; display: block; margin-bottom: 2px; }
+
+    /* ── MAIN CONTENT ── */
+    .content { padding: 20px; max-width: 500px; margin: 0 auto; }
+
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* ── CARDS ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 14px;
+    }
+
+    /* ── CONNECT PANEL ── */
+    .connect-hero {
+      text-align: center;
+      padding: 30px 20px;
+    }
+
+    .connect-icon {
+      font-size: 56px;
+      margin-bottom: 16px;
+    }
+
+    .connect-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .connect-sub {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+
+    .steps {
+      text-align: left;
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      margin-bottom: 20px;
+    }
+
+    .step {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin-bottom: 10px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .step:last-child { margin-bottom: 0; }
+
+    .step-num {
+      background: var(--green);
+      color: #000;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* ── PAIRING CODE DISPLAY ── */
+    .pairing-box {
+      background: var(--surface2);
+      border: 2px dashed var(--green);
+      border-radius: var(--radius);
+      padding: 24px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .pairing-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .pairing-code {
+      font-size: 38px;
+      font-weight: 700;
+      letter-spacing: 8px;
+      color: var(--green);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .pairing-instruction {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 12px;
+      line-height: 1.6;
+    }
+
+    .pairing-instruction strong {
+      color: var(--text);
+    }
+
+    /* ── INPUTS ── */
+    .input-group {
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    input[type="text"],
+    input[type="tel"],
+    input[type="datetime-local"],
+    textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      padding: 12px 14px;
+      font-size: 15px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, textarea:focus {
+      border-color: var(--green);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    /* ── MEDIA UPLOAD ── */
+    .upload-area {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-sm);
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s;
+      position: relative;
+    }
+
+    .upload-area:hover, .upload-area.has-file {
+      border-color: var(--green);
+    }
+
+    .upload-area input { display: none; }
+
+    .upload-icon { font-size: 28px; margin-bottom: 8px; }
+
+    .upload-text {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .upload-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .file-preview {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--green);
+      font-weight: 500;
+    }
+
+    /* ── BUTTONS ── */
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      transition: opacity 0.2s, transform 0.1s;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-green {
+      background: var(--green);
+      color: #000;
+    }
+
+    .btn-green:hover:not(:disabled) { background: #1ebd5a; }
+
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-outline:hover { border-color: var(--green); color: var(--green); }
+
+    .btn-red {
+      background: rgba(255,77,77,0.12);
+      border: 1px solid var(--red);
+      color: var(--red);
+    }
+
+    .btn-sm {
+      width: auto;
+      padding: 7px 14px;
+      font-size: 12px;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .btn-row .btn { flex: 1; }
+
+    /* ── SAVED CAPTIONS ── */
+    .captions-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .caption-chip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      gap: 10px;
+    }
+
+    .caption-chip-info { flex: 1; min-width: 0; }
+
+    .caption-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .caption-text {
+      font-size: 13px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    .caption-actions { display: flex; gap: 6px; }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 4px;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+
+    .icon-btn:hover { background: var(--border); }
+
+    /* ── HISTORY ── */
+    .history-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .history-item {
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      border-left: 3px solid var(--green);
+    }
+
+    .history-item.failed { border-left-color: var(--red); }
+
+    .history-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .history-time { font-size: 11px; color: var(--text-muted); }
+
+    .history-type {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: var(--surface);
+      color: var(--text-muted);
+    }
+
+    .history-caption {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .history-status {
+      font-size: 11px;
+      margin-top: 6px;
+      font-weight: 600;
+    }
+
+    .history-status.success { color: var(--green); }
+    .history-status.failed { color: var(--red); }
+
+    /* ── SCHEDULED ── */
+    .scheduled-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .scheduled-item {
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      border-left: 3px solid var(--yellow);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .scheduled-info { flex: 1; min-width: 0; }
+
+    .scheduled-time {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--yellow);
+      margin-bottom: 4px;
+    }
+
+    .scheduled-caption {
+      font-size: 13px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── TOAST ── */
+    .toast-container {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px 20px;
+      border-radius: 30px;
+      font-size: 14px;
+      font-weight: 500;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      animation: slideUp 0.3s ease;
+      white-space: nowrap;
+    }
+
+    .toast.success { border-color: var(--green); color: var(--green); }
+    .toast.error { border-color: var(--red); color: var(--red); }
+    .toast.info { border-color: var(--yellow); color: var(--yellow); }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── EMPTY STATE ── */
+    .empty {
+      text-align: center;
+      padding: 30px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .empty-icon { font-size: 36px; margin-bottom: 10px; }
+
+    /* ── LOADING ── */
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 16px 0;
+    }
+
+    .text-center { text-align: center; }
+    .mt-10 { margin-top: 10px; }
+    .mt-16 { margin-top: 16px; }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    <div class="logo">📺</div>
+    <div>
+      <div class="app-name">WA TV Poster</div>
+      <div class="app-sub">WhatsApp Status Tool</div>
+    </div>
+  </div>
+  <div class="status-badge disconnected" id="statusBadge" onclick="goToConnect()">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">Disconnected</span>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('post')">
+    <span class="tab-icon">📤</span>Post Now
+  </div>
+  <div class="tab" onclick="switchTab('schedule')">
+    <span class="tab-icon">⏰</span>Schedule
+  </div>
+  <div class="tab" onclick="switchTab('history')">
+    <span class="tab-icon">📋</span>History
+  </div>
+  <div class="tab" onclick="switchTab('captions')">
+    <span class="tab-icon">💬</span>Captions
+  </div>
+  <div class="tab" onclick="switchTab('connect')">
+    <span class="tab-icon">🔗</span>Connect
+  </div>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <!-- ── POST NOW ── -->
+  <div class="section active" id="section-post">
+    <div class="card">
+      <div class="card-title">Post Status Now</div>
+
+      <div class="input-group">
+        <label>Caption</label>
+        <div style="position:relative">
+          <textarea id="postCaption" placeholder="Type your status caption here..."></textarea>
+          <button class="btn btn-outline btn-sm mt-10" onclick="openCaptionPicker('postCaption')" style="width:auto">
+            💬 Use Saved Caption
+          </button>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label>Media (Optional)</label>
+        <div class="upload-area" id="postUploadArea" onclick="document.getElementById('postMedia').click()">
+          <input type="file" id="postMedia" accept="image/*,video/*" onchange="handleFileSelect(this,'postUploadArea','postFilePreview')"/>
+          <div class="upload-icon">📎</div>
+          <div class="upload-text">Tap to add photo or video</div>
+          <div class="upload-hint">Images & videos up to 30MB</div>
+          <div class="file-preview" id="postFilePreview"></div>
+        </div>
+      </div>
+
+      <button class="btn btn-green mt-16" onclick="postNow()" id="postBtn">
+        📤 Post Status Now
+      </button>
+
+      <button class="btn btn-outline mt-10" onclick="clearPostForm()">
+        Clear
+      </button>
+    </div>
+  </div>
+
+  <!-- ── SCHEDULE ── -->
+  <div class="section" id="section-schedule">
+    <div class="card">
+      <div class="card-title">Schedule a Post</div>
+
+      <div class="input-group">
+        <label>Caption</label>
+        <textarea id="schedCaption" placeholder="Type your status caption..."></textarea>
+        <button class="btn btn-outline btn-sm mt-10" onclick="openCaptionPicker('schedCaption')" style="width:auto">
+          💬 Use Saved Caption
+        </button>
+      </div>
+
+      <div class="input-group">
+        <label>Media (Optional)</label>
+        <div class="upload-area" id="schedUploadArea" onclick="document.getElementById('schedMedia').click()">
+          <input type="file" id="schedMedia" accept="image/*,video/*" onchange="handleFileSelect(this,'schedUploadArea','schedFilePreview')"/>
+          <div class="upload-icon">📎</div>
+          <div class="upload-text">Tap to add photo or video</div>
+          <div class="upload-hint">Images & videos up to 30MB</div>
+          <div class="file-preview" id="schedFilePreview"></div>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label>Post At (Date & Time)</label>
+        <input type="datetime-local" id="schedTime"/>
+      </div>
+
+      <button class="btn btn-green mt-16" onclick="schedulePost()" id="schedBtn">
+        ⏰ Schedule Post
+      </button>
+    </div>
+
+    <!-- Pending Scheduled -->
+    <div class="card">
+      <div class="card-title">Pending Scheduled Posts</div>
+      <div class="scheduled-list" id="scheduledList">
+        <div class="empty"><div class="empty-icon">⏰</div>No scheduled posts</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── HISTORY ── -->
+  <div class="section" id="section-history">
+    <div class="card">
+      <div class="card-title">Last 10 Posts</div>
+      <div class="history-list" id="historyList">
+        <div class="empty"><div class="empty-icon">📋</div>No posts yet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CAPTIONS ── -->
+  <div class="section" id="section-captions">
+    <div class="card">
+      <div class="card-title">Saved Captions</div>
+      <div class="captions-list" id="captionsList">
+        <div class="empty"><div class="empty-icon">💬</div>No saved captions</div>
+      </div>
+      <hr class="divider"/>
+      <div class="card-title">Add New Caption</div>
+      <div class="input-group">
+        <label>Label (short name)</label>
+        <input type="text" id="capLabel" placeholder="e.g. Ad Promo"/>
+      </div>
+      <div class="input-group">
+        <label>Caption Text</label>
+        <textarea id="capText" placeholder="e.g. DM us to advertise 📲 +234..."></textarea>
+      </div>
+      <button class="btn btn-green" onclick="saveCaption()">💾 Save Caption</button>
+    </div>
+  </div>
+
+  <!-- ── CONNECT ── -->
+  <div class="section" id="section-connect">
+
+    <!-- Not connected -->
+    <div id="connectPanel">
+      <div class="card">
+        <div class="connect-hero">
+          <div class="connect-icon">📱</div>
+          <div class="connect-title">Link Your WhatsApp</div>
+          <div class="connect-sub">Connect your WhatsApp account once. Then post your status without opening WhatsApp at all.</div>
+
+          <div class="steps">
+            <div class="step">
+              <div class="step-num">1</div>
+              <span>Enter your WhatsApp number below and tap <strong>Get Code</strong></span>
+            </div>
+            <div class="step">
+              <div class="step-num">2</div>
+              <span>Open WhatsApp → Linked Devices → Link a Device → tap <strong>"Link with phone number instead"</strong></span>
+            </div>
+            <div class="step">
+              <div class="step-num">3</div>
+              <span>Type the code shown here into WhatsApp. Done!</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>Your WhatsApp Number</label>
+          <input type="tel" id="phoneInput" placeholder="e.g. 2348012345678 (with country code, no +)"/>
+        </div>
+
+        <button class="btn btn-green" onclick="requestPairingCode()" id="connectBtn">
+          🔗 Get Pairing Code
+        </button>
+      </div>
+
+      <!-- Pairing code display (hidden until code arrives) -->
+      <div class="card" id="pairingCard" style="display:none">
+        <div class="pairing-box">
+          <div class="pairing-label">Enter this code in WhatsApp</div>
+          <div class="pairing-code" id="pairingCodeDisplay">----</div>
+          <div class="pairing-instruction">
+            Open WhatsApp → Linked Devices → Link a Device →<br/>
+            <strong>"Link with phone number instead"</strong><br/>
+            → Type the code above
+          </div>
+        </div>
+        <div class="text-center" style="font-size:13px;color:var(--text-muted)">
+          ⏳ Waiting for you to enter the code in WhatsApp...
+        </div>
+      </div>
+    </div>
+
+    <!-- Connected -->
+    <div id="connectedPanel" style="display:none">
+      <div class="card" style="text-align:center;padding:30px">
+        <div style="font-size:52px;margin-bottom:14px">✅</div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:8px">WhatsApp Connected</div>
+        <div style="font-size:14px;color:var(--text-muted);margin-bottom:24px">
+          Your account is linked. You can now post status from the Post Now tab.
+        </div>
+        <button class="btn btn-red" onclick="disconnectWA()">
+          🔌 Disconnect WhatsApp
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- CAPTION PICKER MODAL -->
+<div id="captionPickerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;padding:20px;align-items:flex-end" onclick="closeCaptionPicker(event)">
+  <div style="background:var(--surface);border-radius:var(--radius);padding:20px;width:100%;max-width:500px;margin:0 auto;max-height:70vh;overflow-y:auto">
+    <div style="font-size:14px;font-weight:700;margin-bottom:14px">Pick a Caption</div>
+    <div id="pickerList"></div>
+    <button class="btn btn-outline mt-10" onclick="document.getElementById('captionPickerModal').style.display='none'">Cancel</button>
+  </div>
+</div>
+
+<script>
+const socket = io();
+let waStatus = 'disconnected';
+let activeCaptionTarget = null;
+let captions = [];
+
+// ── SOCKET EVENTS ──────────────────────────────────────────────────────────
+socket.on('wa_status', ({ status, code }) => {
+  waStatus = status;
+  updateStatusBadge(status);
+
+  if (status === 'pairing_code' && code) {
+    document.getElementById('pairingCodeDisplay').textContent = code;
+    document.getElementById('pairingCard').style.display = 'block';
+  }
+
+  if (status === 'connected') {
+    showConnectedPanel();
+    showToast('WhatsApp connected! ✅', 'success');
+  }
+
+  if (status === 'disconnected' || status === 'logged_out') {
+    showDisconnectedPanel();
+    if (status === 'logged_out') showToast('WhatsApp logged out', 'error');
+  }
+});
+
+// ── STATUS BADGE ───────────────────────────────────────────────────────────
+function updateStatusBadge(status) {
+  const badge = document.getElementById('statusBadge');
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+
+  badge.className = 'status-badge ' + status;
+  dot.className = 'dot';
+
+  const map = {
+    connected: { text: 'Connected', pulse: false },
+    disconnected: { text: 'Disconnected', pulse: false },
+    connecting: { text: 'Connecting...', pulse: true },
+    pairing_code: { text: 'Enter Code', pulse: true },
+    logged_out: { text: 'Logged Out', pulse: false },
+    error: { text: 'Error', pulse: false }
+  };
+
+  const info = map[status] || { text: status, pulse: false };
+  text.textContent = info.text;
+  if (info.pulse) dot.classList.add('pulse');
+}
+
+function goToConnect() { switchTab('connect'); }
+
+// ── TABS ────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    const names = ['post','schedule','history','captions','connect'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('section-' + name).classList.add('active');
+
+  if (name === 'history') loadHistory();
+  if (name === 'captions') loadCaptions();
+  if (name === 'schedule') loadScheduled();
+}
+
+// ── CONNECT ─────────────────────────────────────────────────────────────────
+async function requestPairingCode() {
+  const phone = document.getElementById('phoneInput').value.trim();
+  if (!phone) return showToast('Enter your phone number', 'error');
+
+  const btn = document.getElementById('connectBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Requesting code...';
+
+  try {
+    const res = await fetch('/api/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    });
+    const data = await res.json();
+
+    if (data.code) {
+      document.getElementById('pairingCodeDisplay').textContent = data.code;
+      document.getElementById('pairingCard').style.display = 'block';
+      showToast('Code generated! Enter it in WhatsApp', 'info');
+    } else if (data.error) {
+      showToast(data.error, 'error');
+    } else {
+      showToast('Connecting... check WhatsApp', 'info');
+    }
+  } catch (err) {
+    showToast('Connection failed. Try again.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🔗 Get Pairing Code';
+  }
+}
+
+function showConnectedPanel() {
+  document.getElementById('connectPanel').style.display = 'none';
+  document.getElementById('connectedPanel').style.display = 'block';
+}
+
+function showDisconnectedPanel() {
+  document.getElementById('connectPanel').style.display = 'block';
+  document.getElementById('connectedPanel').style.display = 'none';
+  document.getElementById('pairingCard').style.display = 'none';
+}
+
+async function disconnectWA() {
+  if (!confirm('Disconnect WhatsApp? You will need to re-link.')) return;
+  await fetch('/api/disconnect', { method: 'POST' });
+  showToast('Disconnected', 'info');
+  showDisconnectedPanel();
+}
+
+// ── POST NOW ────────────────────────────────────────────────────────────────
+async function postNow() {
+  if (waStatus !== 'connected') {
+    showToast('Connect WhatsApp first!', 'error');
+    switchTab('connect');
+    return;
+  }
+
+  const caption = document.getElementById('postCaption').value.trim();
+  const media = document.getElementById('postMedia').files[0];
+
+  if (!caption && !media) return showToast('Add caption or media', 'error');
+
+  const btn = document.getElementById('postBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Posting...';
+
+  const formData = new FormData();
+  formData.append('caption', caption);
+  if (media) formData.append('media', media);
+
+  try {
+    const res = await fetch('/api/post-now', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast('Status posted! 🎉', 'success');
+      clearPostForm();
+    } else {
+      showToast(data.error || 'Failed to post', 'error');
+    }
+  } catch (err) {
+    showToast('Network error. Try again.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '📤 Post Status Now';
+  }
+}
+
+function clearPostForm() {
+  document.getElementById('postCaption').value = '';
+  document.getElementById('postMedia').value = '';
+  document.getElementById('postFilePreview').textContent = '';
+  document.getElementById('postUploadArea').classList.remove('has-file');
+}
+
+// ── SCHEDULE ────────────────────────────────────────────────────────────────
+async function schedulePost() {
+  if (waStatus !== 'connected') {
+    showToast('Connect WhatsApp first!', 'error');
+    switchTab('connect');
+    return;
+  }
+
+  const caption = document.getElementById('schedCaption').value.trim();
+  const media = document.getElementById('schedMedia').files[0];
+  const schedTime = document.getElementById('schedTime').value;
+
+  if (!schedTime) return showToast('Pick a date and time', 'error');
+  if (!caption && !media) return showToast('Add caption or media', 'error');
+
+  const btn = document.getElementById('schedBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Scheduling...';
+
+  const formData = new FormData();
+  formData.append('caption', caption);
+  formData.append('scheduledFor', new Date(schedTime).toISOString());
+  if (media) formData.append('media', media);
+
+  try {
+    const res = await fetch('/api/schedule', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast('Post scheduled! ⏰', 'success');
+      document.getElementById('schedCaption').value = '';
+      document.getElementById('schedMedia').value = '';
+      document.getElementById('schedTime').value = '';
+      document.getElementById('schedFilePreview').textContent = '';
+      loadScheduled();
+    } else {
+      showToast(data.error || 'Failed to schedule', 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '⏰ Schedule Post';
+  }
+}
+
+async function loadScheduled() {
+  const list = document.getElementById('scheduledList');
+  try {
+    const res = await fetch('/api/scheduled');
+    const posts = await res.json();
+
+    if (!posts.length) {
+      list.innerHTML = '<div class="empty"><div class="empty-icon">⏰</div>No scheduled posts</div>';
+      return;
+    }
+
+    list.innerHTML = posts.map(p => `
+      <div class="scheduled-item">
+        <div class="scheduled-info">
+          <div class="scheduled-time">📅 ${formatDate(p.scheduledFor)}</div>
+          <div class="scheduled-caption">${p.caption || '[' + p.mediaType + ']'}</div>
+        </div>
+        <button class="icon-btn" onclick="deleteScheduled('${p._id}')" title="Delete">🗑️</button>
+      </div>
+    `).join('');
+  } catch (err) {
+    list.innerHTML = '<div class="empty">Failed to load</div>';
+  }
+}
+
+async function deleteScheduled(id) {
+  await fetch('/api/scheduled/' + id, { method: 'DELETE' });
+  showToast('Deleted', 'info');
+  loadScheduled();
+}
+
+// ── HISTORY ────────────────────────────────────────────────────────────────
+async function loadHistory() {
+  const list = document.getElementById('historyList');
+  try {
+    const res = await fetch('/api/history');
+    const items = await res.json();
+
+    if (!items.length) {
+      list.innerHTML = '<div class="empty"><div class="empty-icon">📋</div>No posts yet</div>';
+      return;
+    }
+
+    list.innerHTML = items.map(item => `
+      <div class="history-item ${item.status}">
+        <div class="history-meta">
+          <div class="history-time">${formatDate(item.postedAt)}</div>
+          <div class="history-type">${item.mediaType}</div>
+        </div>
+        <div class="history-caption">${item.caption || '(no caption)'}</div>
+        <div class="history-status ${item.status}">
+          ${item.status === 'success' ? '✅ Posted' : '❌ Failed: ' + (item.error || 'Unknown error')}
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    list.innerHTML = '<div class="empty">Failed to load</div>';
+  }
+}
+
+// ── CAPTIONS ────────────────────────────────────────────────────────────────
+async function loadCaptions() {
+  try {
+    const res = await fetch('/api/captions');
+    captions = await res.json();
+    renderCaptions();
+  } catch (err) {}
+}
+
+function renderCaptions() {
+  const list = document.getElementById('captionsList');
+  if (!captions.length) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">💬</div>No saved captions</div>';
+    return;
+  }
+
+  list.innerHTML = captions.map(c => `
+    <div class="caption-chip">
+      <div class="caption-chip-info">
+        <div class="caption-label">${c.label}</div>
+        <div class="caption-text">${c.text}</div>
+      </div>
+      <div class="caption-actions">
+        <button class="icon-btn" onclick="deleteCaption('${c._id}')" title="Delete">🗑️</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function saveCaption() {
+  const label = document.getElementById('capLabel').value.trim();
+  const text = document.getElementById('capText').value.trim();
+  if (!label || !text) return showToast('Fill label and caption text', 'error');
+
+  try {
+    const res = await fetch('/api/captions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label, text })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Caption saved! 💾', 'success');
+      document.getElementById('capLabel').value = '';
+      document.getElementById('capText').value = '';
+      loadCaptions();
+    }
+  } catch (err) {
+    showToast('Failed to save', 'error');
+  }
+}
+
+async function deleteCaption(id) {
+  await fetch('/api/captions/' + id, { method: 'DELETE' });
+  showToast('Deleted', 'info');
+  loadCaptions();
+}
+
+// ── CAPTION PICKER ────────────────────────────────────────────────────────
+function openCaptionPicker(targetId) {
+  activeCaptionTarget = targetId;
+  const modal = document.getElementById('captionPickerModal');
+  const list = document.getElementById('pickerList');
+
+  if (!captions.length) {
+    list.innerHTML = '<div class="empty">No saved captions yet. Add some in the Captions tab.</div>';
+  } else {
+    list.innerHTML = captions.map(c => `
+      <div class="caption-chip" style="cursor:pointer;margin-bottom:8px" onclick="pickCaption('${c._id}')">
+        <div class="caption-chip-info">
+          <div class="caption-label">${c.label}</div>
+          <div class="caption-text">${c.text}</div>
+        </div>
+        <span style="color:var(--green)">✓</span>
+      </div>
+    `).join('');
+  }
+
+  modal.style.display = 'flex';
+}
+
+function pickCaption(id) {
+  const cap = captions.find(c => c._id === id);
+  if (cap && activeCaptionTarget) {
+    document.getElementById(activeCaptionTarget).value = cap.text;
+  }
+  document.getElementById('captionPickerModal').style.display = 'none';
+}
+
+function closeCaptionPicker(e) {
+  if (e.target === document.getElementById('captionPickerModal')) {
+    document.getElementById('captionPickerModal').style.display = 'none';
+  }
+}
+
+// ── FILE UPLOAD ─────────────────────────────────────────────────────────────
+function handleFileSelect(input, areaId, previewId) {
+  const file = input.files[0];
+  const area = document.getElementById(areaId);
+  const preview = document.getElementById(previewId);
+
+  if (file) {
+    area.classList.add('has-file');
+    preview.textContent = '📎 ' + file.name;
+  } else {
+    area.classList.remove('has-file');
+    preview.textContent = '';
+  }
+}
+
+// ── TOAST ────────────────────────────────────────────────────────────────────
+function showToast(msg, type = 'info') {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+// ── UTILS ────────────────────────────────────────────────────────────────────
+function formatDate(d) {
+  return new Date(d).toLocaleString('en-NG', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+async function init() {
+  // Set min datetime for scheduler to now
+  const now = new Date();
+  now.setMinutes(now.getMinutes() + 5);
+  document.getElementById('schedTime').min = now.toISOString().slice(0, 16);
+
+  // Load captions in background (needed for picker anywhere)
+  try {
+    const res = await fetch('/api/captions');
+    captions = await res.json();
+  } catch (e) {}
+
+  // Check initial connection status
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    waStatus = data.status;
+    updateStatusBadge(data.status);
+    if (data.status === 'connected') showConnectedPanel();
+  } catch (e) {}
+}
+
+init();
+</script>
+</body>
+</html>
