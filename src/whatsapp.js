@@ -2,7 +2,9 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
+  Browsers
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const path = require('path');
@@ -10,9 +12,9 @@ const fs = require('fs');
 
 const AUTH_FOLDER = path.join(__dirname, '../auth_info');
 let sock = null;
-let connectionStatus = 'disconnected'; // disconnected | connecting | connected
+let connectionStatus = 'disconnected';
 let currentPairingCode = null;
-let io = null; // socket.io instance, set externally
+let io = null;
 
 function setIO(socketIO) {
   io = socketIO;
@@ -32,7 +34,6 @@ function emitStatus(status, extra = {}) {
 }
 
 async function connectWhatsApp(phoneNumber = null) {
-  // Ensure auth folder exists
   if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
@@ -42,22 +43,23 @@ async function connectWhatsApp(phoneNumber = null) {
 
   sock = makeWASocket({
     version,
-    auth: state,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, logger)
+    },
     logger,
     printQRInTerminal: false,
-    browser: ['WA TV Poster', 'Chrome', '1.0.0'],
-    generateHighQualityLinkPreview: false
+    browser: Browsers.baileys('Desktop'),
+    generateHighQualityLinkPreview: false,
+    syncFullHistory: false
   });
 
-  // Save credentials whenever they update
   sock.ev.on('creds.update', saveCreds);
 
-  // Handle connection updates
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      // QR fallback (shouldn't happen if pairing code is used)
       emitStatus('qr', { qr });
     }
 
@@ -71,13 +73,11 @@ async function connectWhatsApp(phoneNumber = null) {
       const reason = lastDisconnect?.error?.output?.statusCode;
       console.log('❌ Connection closed. Reason:', reason);
 
-      // If logged out, clear auth and notify
       if (reason === DisconnectReason.loggedOut) {
         clearAuth();
         emitStatus('logged_out');
       } else {
         emitStatus('disconnected');
-        // Auto-reconnect after 5s (not if logged out)
         setTimeout(() => {
           console.log('🔄 Reconnecting...');
           connectWhatsApp();
@@ -90,13 +90,10 @@ async function connectWhatsApp(phoneNumber = null) {
     }
   });
 
-  // Request pairing code if phone number provided and not registered
   if (phoneNumber && !state.creds.registered) {
     emitStatus('connecting');
-    // Small delay to let socket initialize
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 3000));
     try {
-      // Format: remove +, spaces, dashes
       const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
       const code = await sock.requestPairingCode(cleanNumber);
       currentPairingCode = code;
@@ -128,7 +125,6 @@ async function postStatus(mediaPath, caption, mediaType) {
 
   try {
     if (mediaType === 'text') {
-      // Text-only status
       await sock.sendMessage('status@broadcast', {
         text: caption
       });
